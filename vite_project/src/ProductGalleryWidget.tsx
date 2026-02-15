@@ -7,6 +7,8 @@ type Props = {
     host: HTMLElement
 }
 
+export const WIDGET_ID = 'ProductGallery';
+
 export default function ProductGalleryWidget({host}: Props) {
     const config = useWidgetConfig(host);
 

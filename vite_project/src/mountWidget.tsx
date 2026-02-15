@@ -9,7 +9,7 @@ export function mountWidget(hostElement: HTMLElement) {
 
     ensureGlobalStyle('reactedge-productgallery-css', '/widget/productgallery.css');
 
-    activity('bootstrap', 'Product Gallery Widget mounted', hostElement);
+    activity('bootstrap', 'Widget mounted', hostElement);
 
     // Create React root inside shadow
     const root = createRoot(mountedHost);
