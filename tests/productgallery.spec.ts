@@ -1,46 +1,18 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
+import type { Locator } from "@playwright/test";
+import { WIDGET_ID } from "../src/bootstrap/config/Config";
 
 test.describe('Product Gallery Widget', () => {
-    let widget;
+    let widget: Locator;
 
     test.beforeEach(async ({ page }) => {
-        await page.goto('/fixtures/productgallery.html');
-        widget = page.locator('productgallery-widget');
+        await page.goto('/?reactedge_debug=eager');
+        widget = page.locator(`${WIDGET_ID}-widget`);
         await expect(widget).toBeVisible();
     });
 
     test('mounts the custom element', async () => {
         await expect(widget).toBeVisible();
-    });
-
-    test('switches from tiled to classic view', async () => {
-        const switchButton = widget.locator('[data-gallery-switch]');
-        const tiledView = widget.locator('[data-gallery-tiled]');
-        const classicView = widget.locator('[data-gallery-classic]');
-
-        // Initial state
-        await expect(switchButton).toBeVisible();
-        await expect(tiledView).toBeVisible();
-        await expect(classicView).toHaveCount(0); // better than "hidden" if not rendered
-
-        // Switch
-        await switchButton.click();
-
-        // After switch: classic is visible, tiled is gone
-        await expect(classicView).toBeVisible();
-        await expect(tiledView).toHaveCount(0);
-    });
-
-    test('renders main image and thumbnails in classic view', async () => {
-        const switchButton = widget.locator('[data-gallery-switch]');
-        await switchButton.click();
-
-        const mainImage = widget.locator('[data-gallery-main]');
-        await expect(mainImage).toBeVisible();
-
-        const thumbnails = widget.locator('[data-gallery-thumb]');
-        await expect(thumbnails).toHaveCount(3);
-        await expect(thumbnails.first()).toBeVisible();
     });
 
     test('renders tiled images in tiled view', async () => {
@@ -51,42 +23,42 @@ test.describe('Product Gallery Widget', () => {
         await expect(widget.locator('[data-gallery-main]')).toHaveCount(0);
         await expect(widget.locator('[data-gallery-thumb]')).toHaveCount(0);
 
-        // // And tiled tiles should exist (add a dedicated selector if you can)
+        // And tiled tiles should exist (add a dedicated selector if you can)
         const tiles = widget.locator('[data-gallery-tile]');
         await expect(tiles).toHaveCount(3);
     });
 
-    test('clicking a thumbnail updates the main image', async () => {
-        const switchButton = widget.locator('[data-gallery-switch]');
-        await switchButton.click(); // ensure classic mode
+    test('next and prev arrows update the image in zoom mode', async () => {
+        const tiles = widget.locator('[data-gallery-tile]');
+        await expect(tiles).toHaveCount(3);
 
-        const mainImage = widget.locator('[data-gallery-main]');
-        const thumbnails = widget.locator('[data-gallery-thumb]');
+        // Enter zoom mode
+        await tiles.first().click();
 
-        await expect(thumbnails).toHaveCount(3);
-
-        // Capture initial src
-        const initialSrc = await mainImage.getAttribute('src');
-
-        // Click second thumbnail
-        await thumbnails.nth(1).click();
-
-        // Wait for update
-        await expect(mainImage).not.toHaveAttribute('src', initialSrc);
-    });
-
-    test('next and prev arrow update the main image', async () => {
-        const switchButton = widget.locator('[data-gallery-switch]');
-        await switchButton.click(); // ensure classic mode
-
+        const zoomView = widget.locator('[data-gallery-zoom]');
         const mainImage = widget.locator('[data-gallery-main]');
         const nextButton = widget.locator('[data-gallery-next]');
+        const prevButton = widget.locator('[data-gallery-prev]');
+
+        await expect(zoomView).toBeVisible();
+        await expect(mainImage).toBeVisible();
+        await expect(nextButton).toBeVisible();
+        await expect(prevButton).toBeVisible();
+        await expect(zoomView.locator('[data-imagezoom-zoom-in]')).toBeVisible();
 
         const initialSrc = await mainImage.getAttribute('src');
+
+        if (initialSrc === null) {
+            throw new Error("Expected zoom image to have a src attribute");
+        }
+
+        await zoomView.locator('[data-imagezoom-zoom-in]').click();
+        await expect(zoomView.locator('[data-imagezoom-scale]')).toHaveText('150%');
+
         await nextButton.click();
         await expect(mainImage).not.toHaveAttribute('src', initialSrc);
+        await expect(zoomView.locator('[data-imagezoom-scale]')).toHaveText('100%');
 
-        const prevButton = widget.locator('[data-gallery-prev]');
         await prevButton.click();
         await expect(mainImage).toHaveAttribute('src', initialSrc);
     });
@@ -98,6 +70,12 @@ test.describe('Product Gallery Widget', () => {
         const firstTile = tiles.first();
         const tileSrc = await firstTile.getAttribute('src');
 
+        expect(tileSrc).not.toBeNull();
+
+        if (tileSrc === null) {
+            throw new Error("Expected gallery tile to have a src attribute");
+        }
+
         await firstTile.click();
 
         const zoomView = widget.locator('[data-gallery-zoom]');
@@ -107,21 +85,7 @@ test.describe('Product Gallery Widget', () => {
         await expect(mainImage).toHaveAttribute('src', tileSrc);
 
         // Tiled view should be gone
-        await expect(widget.locator('[data-gallery-tiled]')).toHaveCount(0);
-    });
-
-    test('zoom next arrow updates image', async () => {
-        const tiles = widget.locator('[data-gallery-tile]');
-        await tiles.first().click();
-
-        const mainImage = widget.locator('[data-gallery-main]');
-        const next = widget.locator('[data-gallery-next]');
-
-        const initialSrc = await mainImage.getAttribute('src');
-
-        await next.click();
-
-        await expect(mainImage).not.toHaveAttribute('src', initialSrc);
+        await expect(widget.locator('[data-gallery-tile]')).toHaveCount(0);
     });
 
     test('minify exits zoom mode and returns to tiled', async () => {
@@ -135,5 +99,81 @@ test.describe('Product Gallery Widget', () => {
 
         await expect(widget.locator('[data-gallery-tiled]')).toBeVisible();
         await expect(widget.locator('[data-gallery-zoom]')).toHaveCount(0);
+    });
+
+    test('adds selected attribute image to the gallery', async ({ page }) => {
+        const tiles = widget.locator('[data-gallery-tile]');
+
+        await expect(tiles).toHaveCount(3);
+
+        await page.evaluate(() => {
+            window.ReactEdgeSignals.emit({
+                type: 'product_attribute_changed',
+                code: 'color',
+                value: '57'
+            });
+        });
+
+        await expect(tiles).toHaveCount(4);
+
+        await expect(
+            tiles.last()
+        ).toHaveAttribute('src', /purple/);
+    });
+
+    test('does not duplicate an existing image after attribute selection', async ({ page }) => {
+        const tiles = widget.locator('[data-gallery-tile]');
+
+        await expect(tiles).toHaveCount(3);
+
+        const initialSources = await tiles.evaluateAll(images =>
+            images.map(image => image.getAttribute('src'))
+        );
+
+        await page.evaluate(() => {
+            window.ReactEdgeSignals.emit({
+                type: 'product_attribute_changed',
+                code: 'color',
+                value: 'EXISTING_VALUE'
+            });
+        });
+
+        await expect(tiles).toHaveCount(3);
+
+        const sources = await tiles.evaluateAll(images =>
+            images.map(image => image.getAttribute('src'))
+        );
+
+        expect(sources).toEqual(initialSources);
+    });
+});
+
+
+test.describe('Product Gallery - Magento failures', () => {
+
+    test('does not break when Magento returns no products', async ({ page }) => {
+        await page.route('**/graphql', async route => {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    data: {
+                        products: {
+                            items: []
+                        }
+                    }
+                })
+            });
+        });
+
+        await page.goto('/?reactedge_debug=eager');
+
+        const widget = page.locator(`${WIDGET_ID}-widget`);
+
+        await expect(widget).toBeAttached();
+
+        await expect(
+            widget.locator('[data-gallery-tiled]')
+        ).toHaveCount(0);
     });
 });
